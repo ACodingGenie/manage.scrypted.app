@@ -9,25 +9,39 @@
         <v-card-subtitle v-if="loginHostname" style="text-align: center;" class="scrypted-subtitle2">Log into: {{
           loginHostname }}</v-card-subtitle>
 
-        <v-text-field class="ml-8 mr-8 mt-8 mb-8" density="compact" variant="outlined" v-model="username"
-          autocorrect="off" autocapitalize="off" spellcheck="false" label="User Name" persistent-placeholder
-          hide-details></v-text-field>
-        <v-text-field class="ml-8 mr-8 mb-8" density="compact" variant="outlined" v-model="password" type="password"
-          :label="changePassword ? 'Current Password' : 'Password'" autocomplete="on" persistent-placeholder
-          hide-details>
-        </v-text-field>
-        <v-text-field v-if="changePassword" class="ml-8 mr-8 mb-4" density="compact" variant="outlined"
-          v-model="newPassword" type="password" label="New Password" autocomplete="on" persistent-placeholder>
-        </v-text-field>
-        <v-text-field v-if="!hasLogin || changePassword" class="ml-8 mr-8 mb-4" density="compact" variant="outlined"
-          v-model="confirmPassword" type="password"
-          :label="changePassword ? 'Confirm New Password' : 'Confirm Password'" autocomplete="on"
-          persistent-placeholder>
-        </v-text-field>
+        <template v-if="showBasic">
+          <v-text-field class="ml-8 mr-8 mt-8 mb-8" density="compact" variant="outlined" v-model="username"
+            autocorrect="off" autocapitalize="off" spellcheck="false" label="User Name" persistent-placeholder
+            hide-details></v-text-field>
+          <v-text-field class="ml-8 mr-8 mb-8" density="compact" variant="outlined" v-model="password" type="password"
+            :label="changePassword ? 'Current Password' : 'Password'" autocomplete="on" persistent-placeholder
+            hide-details>
+          </v-text-field>
+          <v-text-field v-if="changePassword" class="ml-8 mr-8 mb-4" density="compact" variant="outlined"
+            v-model="newPassword" type="password" label="New Password" autocomplete="on" persistent-placeholder>
+          </v-text-field>
+          <v-text-field v-if="!hasLogin || changePassword" class="ml-8 mr-8 mb-4" density="compact" variant="outlined"
+            v-model="confirmPassword" type="password"
+            :label="changePassword ? 'Confirm New Password' : 'Confirm Password'" autocomplete="on"
+            persistent-placeholder>
+          </v-text-field>
+        </template>
 
         <div class="pl-8 pr-8 pb-2" style="color: red;" v-if="loginResult">{{ loginResult }}</div>
 
-        <v-card-actions>
+        <template v-if="showBasic && showOidc">
+          <div class="pl-8 pr-8 pb-2">
+            <v-divider></v-divider>
+          </div>
+        </template>
+
+        <div v-if="showOidc" class="pl-8 pr-8 pb-4" :class="{ 'pt-6': !showBasic }">
+          <v-btn block variant="outlined" @click.prevent="signInWithOidc">
+            Sign in with SSO
+          </v-btn>
+        </div>
+
+        <v-card-actions v-if="showBasic">
           <v-btn :icon="getFaPrefix('fa-home')" v-if="isScryptedCloudHostname()" size="small"
             @click.prevent="logoutClient"></v-btn>
           <template v-if="hasLogin">
@@ -39,6 +53,11 @@
           <v-btn v-if="hasLogin" size="small" type="submit" variant="text" @click.prevent="doLogin">Log In</v-btn>
           <v-btn v-else type="submit" size="small" variant="text" @click.prevent="doLogin">Create Account</v-btn>
         </v-card-actions>
+        <v-card-actions v-else-if="showOidc">
+          <v-btn :icon="getFaPrefix('fa-home')" v-if="isScryptedCloudHostname()" size="small"
+            @click.prevent="logoutClient"></v-btn>
+          <v-spacer></v-spacer>
+        </v-card-actions>
       </v-card>
     </v-form>
   </v-dialog>
@@ -46,7 +65,7 @@
 
 <script setup lang="ts">
 import { loginScryptedClient, checkScryptedClientLogin } from '@scrypted/client/src/index';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { getBaseUrl, hasLogin, isScryptedCloudHostname, isSelfHosted, logoutClient, saveSelfHostedCredentials } from '../client';
 import { windowLocationReload } from '../platform-shims';
 import { getFaPrefix } from '../fa-prefix';
@@ -62,14 +81,25 @@ const changePassword = ref<boolean>(false);
 const newPassword = ref<string>();
 const loginResult = ref<string>();
 const loginHostname = ref<string>();
+const authType = ref<string>('basic');
+
+const showBasic = computed(() => authType.value !== 'oidc');
+const showOidc = computed(() => authType.value === 'oidc' || authType.value === 'basic,oidc');
 
 const baseUrl = getBaseUrl();
 checkScryptedClientLogin({
   baseUrl,
 })
-  .then(r => {
+  .then((r: Awaited<ReturnType<typeof checkScryptedClientLogin>>) => {
     loginHostname.value = r.hostname;
+    if (r.authType) {
+      authType.value = r.authType;
+    }
   })
+
+function signInWithOidc() {
+  window.location.href = '/login/oidc';
+}
 
 async function doLogin() {
   const baseUrl = getBaseUrl();
