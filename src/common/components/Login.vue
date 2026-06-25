@@ -29,34 +29,29 @@
 
         <div class="pl-8 pr-8 pb-2" style="color: red;" v-if="loginResult">{{ loginResult }}</div>
 
-        <template v-if="showBasic && showOidc">
-          <div class="pl-8 pr-8 pb-2">
-            <v-divider></v-divider>
-          </div>
-        </template>
+        <div v-if="showBasic && oidcEnabled" class="pl-8 pr-8 pb-2">
+          <v-divider></v-divider>
+        </div>
 
-        <div v-if="showOidc" class="pl-8 pr-8 pb-4" :class="{ 'pt-6': !showBasic }">
+        <div v-if="oidcEnabled" class="pl-8 pr-8 pb-4" :class="{ 'pt-6': !showBasic }">
           <v-btn block variant="outlined" @click.prevent="signInWithOidc">
-            Sign in with SSO
+            {{ showBasic ? 'Or sign in with OIDC' : 'Sign in with OIDC' }}
           </v-btn>
         </div>
 
-        <v-card-actions v-if="showBasic">
+        <v-card-actions>
           <v-btn :icon="getFaPrefix('fa-home')" v-if="isScryptedCloudHostname()" size="small"
             @click.prevent="logoutClient"></v-btn>
-          <template v-if="hasLogin">
+          <template v-if="showBasic && hasLogin">
             <v-btn size="small" variant="text" v-if="!changePassword" @click="changePassword = true">Change
               Password</v-btn>
             <v-btn size="small" variant="text" v-else="!changePassword" @click="changePassword = false">Cancel</v-btn>
           </template>
           <v-spacer></v-spacer>
-          <v-btn v-if="hasLogin" size="small" type="submit" variant="text" @click.prevent="doLogin">Log In</v-btn>
-          <v-btn v-else type="submit" size="small" variant="text" @click.prevent="doLogin">Create Account</v-btn>
-        </v-card-actions>
-        <v-card-actions v-else-if="showOidc">
-          <v-btn :icon="getFaPrefix('fa-home')" v-if="isScryptedCloudHostname()" size="small"
-            @click.prevent="logoutClient"></v-btn>
-          <v-spacer></v-spacer>
+          <template v-if="showBasic">
+            <v-btn v-if="hasLogin" size="small" type="submit" variant="text" @click.prevent="doLogin">Log In</v-btn>
+            <v-btn v-else type="submit" size="small" variant="text" @click.prevent="doLogin">Create Account</v-btn>
+          </template>
         </v-card-actions>
       </v-card>
     </v-form>
@@ -64,9 +59,9 @@
 </template>
 
 <script setup lang="ts">
-import { loginScryptedClient, checkScryptedClientLogin } from '@scrypted/client/src/index';
+import { combineBaseUrl, loginScryptedClient, checkScryptedClientLogin } from '@scrypted/client/src/index';
 import { computed, ref } from 'vue';
-import { getBaseUrl, hasLogin, isScryptedCloudHostname, isSelfHosted, logoutClient, saveSelfHostedCredentials } from '../client';
+import { authType, getBaseUrl, hasLogin, isScryptedCloudHostname, isSelfHosted, logoutClient, oidcEnabled, saveSelfHostedCredentials } from '../client';
 import { windowLocationReload } from '../platform-shims';
 import { getFaPrefix } from '../fa-prefix';
 
@@ -81,24 +76,23 @@ const changePassword = ref<boolean>(false);
 const newPassword = ref<string>();
 const loginResult = ref<string>();
 const loginHostname = ref<string>();
-const authType = ref<string>('basic');
 
 const showBasic = computed(() => authType.value !== 'oidc');
-const showOidc = computed(() => authType.value === 'oidc' || authType.value === 'basic,oidc');
 
 const baseUrl = getBaseUrl();
 checkScryptedClientLogin({
   baseUrl,
 })
-  .then((r: Awaited<ReturnType<typeof checkScryptedClientLogin>>) => {
+  .then(r => {
     loginHostname.value = r.hostname;
     if (r.authType) {
       authType.value = r.authType;
     }
   })
+  .catch(() => { });
 
 function signInWithOidc() {
-  window.location.href = '/login/oidc';
+  window.location.href = combineBaseUrl(baseUrl, 'login/oidc');
 }
 
 async function doLogin() {
@@ -121,7 +115,7 @@ async function doLogin() {
         loginResult.value = "New passwords do not match.";
         return;
       }
-      change_password = confirmPassword.value;
+      change_password = newPassword.value;
     }
 
     const response = await loginScryptedClient({
@@ -136,13 +130,13 @@ async function doLogin() {
       loginResult.value = response.error;
       return;
     }
+
     try {
       const redirect_uri = new URL(window.location.href).searchParams.get('redirect_uri');
-      if (redirect_uri) {
+      if (redirect_uri && new URL(redirect_uri).origin === window.location.origin) {
         window.location.href = redirect_uri;
         return;
       }
-
     }
     catch (e) {
     }
